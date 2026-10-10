@@ -1,0 +1,17 @@
+{
+  "title": "STR-E200ES Radio",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect your radio",
+        "description": "Enter the radio's IPv4 address and HTTP port, not the Home Assistant address.",
+        "data": {"host": "Radio IP address", "port": "Radio HTTP port"}
+      }
+    },
+    "error": {
+      "invalid_host": "Enter a valid unicast IPv4 address",
+      "cannot_connect": "Cannot connect to the STR-E200ES radio API. Check the address, port and network."
+    },
+    "abort": {"already_configured": "This radio is already configured"}
+  }
+}

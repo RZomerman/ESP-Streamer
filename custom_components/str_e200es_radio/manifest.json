@@ -1,0 +1,11 @@
+{
+  "domain": "str_e200es_radio",
+  "name": "STR-E200ES Radio",
+  "version": "0.1.0",
+  "config_flow": true,
+  "documentation": "https://github.com/RZomerman/ESP-Streamer",
+  "issue_tracker": "https://github.com/RZomerman/ESP-Streamer/issues",
+  "codeowners": ["@RZomerman"],
+  "iot_class": "local_polling",
+  "requirements": []
+}
