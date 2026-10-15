@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Internet Radio &amp; AirPlay</title>
+<script>
+(() => {
+  const param = new URLSearchParams(window.location.search).get("scoutTheme");
+  const theme = param === "light" || param === "dark" ? param :
+    (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  document.documentElement.setAttribute("data-theme", theme);
+})();
+</script>
+<style>
+:root {
+  color-scheme: light;
+  --cp-bg: #f7f4ef;
+  --cp-bg-elevated: #fcfbf8;
+  --cp-surface: #ffffff;
+  --cp-surface-soft: #f5f5f5;
+  --cp-border: #dedede;
+  --cp-border-strong: #919191;
+  --cp-text: #242424;
+  --cp-text-muted: #5c5c5c;
+  --cp-text-soft: #6f6f6f;
+  --cp-accent: #b11f4b;
+  --cp-accent-hover: #9a1a41;
+  --cp-accent-soft: rgba(177, 31, 75, 0.08);
+  --cp-accent-fg: #ffffff;
+  --cp-success: #16a34a;
+  --cp-danger: #dc2626;
+  --cp-warning: #f59e0b;
+  --cp-link: #0078d4;
+  --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.12);
+  --cp-overlay: rgba(255, 255, 255, 0.8);
+  --cp-panel: rgba(255, 255, 255, 0.86);
+  --cp-panel-strong: rgba(255, 255, 255, 0.96);
+  --cp-sheen: rgba(255, 255, 255, 0.55);
+  --cp-highlight: rgba(177, 31, 75, 0.12);
+}
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --cp-bg: #3d3b3a;
+  --cp-bg-elevated: #343231;
+  --cp-surface: #292929;
+  --cp-surface-soft: #2e2e2e;
+  --cp-border: #474747;
+  --cp-border-strong: #5f5f5f;
+  --cp-text: #dedede;
+  --cp-text-muted: #919191;
+  --cp-text-soft: #b0b0b0;
+  --cp-accent: #fd8ea1;
+  --cp-accent-hover: #fb7b91;
+  --cp-accent-soft: rgba(253, 142, 161, 0.14);
+  --cp-accent-fg: #1a1a1a;
+  --cp-success: #4ade80;
+  --cp-danger: #f87171;
+  --cp-warning: #fbbf24;
+  --cp-link: #4da6ff;
+  --cp-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+  --cp-overlay: rgba(41, 41, 41, 0.88);
+  --cp-panel: rgba(41, 41, 41, 0.72);
+  --cp-panel-strong: rgba(41, 41, 41, 0.96);
+  --cp-sheen: rgba(255, 255, 255, 0.04);
+  --cp-highlight: rgba(253, 142, 161, 0.12);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--cp-bg); color: var(--cp-text);
+  font: 16px/1.5 "Segoe UI", Aptos, Calibri, -apple-system, BlinkMacSystemFont, sans-serif; }
+main { max-width: 760px; margin: 40px auto; padding: 0 20px; }
+h1 { font-size: 28px; margin-bottom: 4px; }
+h2 { font-size: 20px; margin: 0 0 16px; }
+p { margin: 8px 0; }
+.muted { color: var(--cp-text-muted); }
+.card { background: var(--cp-surface); border: 1px solid var(--cp-border);
+  border-radius: 16px; padding: 24px; margin-top: 24px; }
+.stations { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+button, input { font: inherit; border-radius: 0.625rem; border: 1px solid var(--cp-border-strong); }
+button { background: var(--cp-surface-soft); color: var(--cp-text); padding: 16px; cursor: pointer; }
+button:hover { background: var(--cp-accent-soft); border-color: var(--cp-accent); }
+button[aria-pressed="true"], button.primary { background: var(--cp-accent);
+  color: var(--cp-accent-fg); border-color: var(--cp-accent); }
+button.primary:hover { background: var(--cp-accent-hover); }
+button:disabled { opacity: .55; cursor: wait; }
+input { width: 100%; background: var(--cp-bg-elevated); color: var(--cp-text); padding: 12px; margin: 8px 0 12px; }
+:focus-visible { outline: 3px solid var(--cp-accent); outline-offset: 3px; }
+.status { font-weight: 600; font-size: 20px; }
+#error { color: var(--cp-danger); white-space: pre-wrap; overflow-wrap: anywhere; }
+a { color: var(--cp-link); }
+small { color: var(--cp-text-soft); }
+.track { font-size: 24px; font-weight: 600; overflow-wrap: anywhere; }
+dl { display: grid; grid-template-columns: 140px 1fr; gap: 8px 16px; margin-bottom: 0; }
+dt { color: var(--cp-text-muted); }
+dd { margin: 0; overflow-wrap: anywhere; }
+@media (max-width: 480px) { main { margin-top: 20px; } .card { padding: 20px; } }
+</style>
+</head>
+<body>
+<main>
+<h1>Internet Radio &amp; AirPlay</h1>
+<p class="muted">Optical S/PDIF on GPIO14 &middot; 48 kHz stereo</p>
+<section class="card" aria-label="Playback status" aria-live="polite">
+  <div class="status" id="source">Connecting to the streamer...</div>
+  <p id="detail" class="muted">NPO Radio 2 is the default on every boot.</p>
+  <p id="error" role="alert" hidden></p>
+</section>
+<section class="card" aria-label="Now playing" aria-live="polite">
+  <h2>Now playing</h2>
+  <p class="track" id="track-title">Waiting for stream information...</p>
+  <p id="track-artist" hidden></p>
+  <p id="track-album" class="muted" hidden></p>
+  <p id="metadata-note" class="muted"></p>
+  <dl>
+    <dt>Stream / source</dt><dd id="stream-name">&mdash;</dd>
+    <dt>Audio format</dt><dd id="stream-format">&mdash;</dd>
+    <dt>Bitrate</dt><dd id="stream-bitrate">&mdash;</dd>
+    <dt>Optical output</dt><dd>48 kHz &middot; stereo &middot; 16-bit PCM</dd>
+    <dt>Stream URL</dt><dd id="stream-url">&mdash;</dd>
+  </dl>
+</section>
+<section class="card">
+  <h2>Radio stations</h2>
+  <div class="stations">
+    <button type="button" data-station="0" aria-pressed="false">NPO Radio 2</button>
+    <button type="button" data-station="2" aria-pressed="false">Radio 538</button>
+    <button type="button" data-station="1" aria-pressed="false">BNR Radio</button>
+    <button type="button" data-station="3" aria-pressed="false">SLAM! FM</button>
+  </div>
+  <p class="muted">While AirPlay is connected, your selection is queued for when you disconnect.</p>
+</section>
+<section class="card">
+  <h2>Your own stream</h2>
+  <form id="custom">
+    <label for="url">Direct MP3 or AAC stream URL</label>
+    <input id="url" name="url" type="url" maxlength="511" required
+      placeholder="https://example.com/live.mp3" autocomplete="url">
+    <button type="submit" class="primary" id="custom-play">Save &amp; play stream</button>
+  </form>
+  <p><small>HTTP/HTTPS MP3 or AAC (ADTS), 32 / 44.1 / 48 kHz. Not a website, playlist, HLS or Spotify link. The URL is saved; boot still starts NPO Radio 2.</small></p>
+</section>
+<section class="card">
+  <h2>Stream from your phone or Mac</h2>
+  <p>Select this receiver in your app's AirPlay audio menu on the same Wi-Fi network.
+    Radio stops while AirPlay is connected and resumes when you disconnect.
+    Pausing AirPlay keeps the connection.</p>
+  <p class="muted">Bluetooth audio is not supported by the ESP32-S3.</p>
+  <a href="/settings">Wi-Fi &amp; receiver settings</a>
+</section>
+</main>
+<script>
+const source = document.getElementById("source");
+const detail = document.getElementById("detail");
+const error = document.getElementById("error");
+const urlInput = document.getElementById("url");
+const buttons = [...document.querySelectorAll("button")];
+let busy = false;
+let urlLoaded = false;
+function showError(message) {
+  error.textContent = message;
+  error.hidden = !message;
+}
+function render(state) {
+  source.textContent = state.source === "AirPlay" ? "AirPlay connected" :
+    (state.radio_playing ? state.station : "Connecting to " + state.station + "...");
+  detail.textContent = state.source === "AirPlay" ?
+    (state.airplay?.playing ? "Playing" : "Paused / waiting for audio") +
+      " \u00b7 After disconnect: " + state.station : "Radio \u00b7 NPO Radio 2 on boot";
+  const track = state.now_playing || {};
+  document.getElementById("track-title").textContent = track.title || "Song information unavailable";
+  for (const field of ["artist", "album"]) {
+    const element = document.getElementById("track-" + field);
+    element.textContent = track[field] || "";
+    element.hidden = !track[field];
+  }
+  document.getElementById("metadata-note").textContent = track.title ?
+    (state.source === "AirPlay" ? "Track information supplied by your AirPlay app." :
+      "Live station metadata; titles may lead the buffered audio by a few seconds.") :
+    (state.source === "AirPlay" ? "Waiting for your AirPlay app to send track information." :
+      track.metadata_supported ? "Waiting for the station to send a song title." :
+        "This station does not supply live song titles.");
+  document.getElementById("stream-name").textContent =
+    track.stream_name || (state.source === "AirPlay" ? "AirPlay" : state.station);
+  document.getElementById("stream-format").textContent = [
+    track.codec, track.sample_rate ? (track.sample_rate / 1000) + " kHz" : "",
+    track.channels === 2 ? "Stereo" : track.channels === 1 ? "Mono" : ""
+  ].filter(Boolean).join(" \u00b7 ") || "\u2014";
+  document.getElementById("stream-bitrate").textContent =
+    track.bitrate_kbps ? track.bitrate_kbps + " kbps (station reported)" : "Not reported";
+  document.getElementById("stream-url").textContent = track.url ||
+    (state.source === "AirPlay" ? "AirPlay audio from your phone / computer" : "\u2014");
+  for (const button of buttons) {
+    const station = button.dataset.station === undefined ? 4 : Number(button.dataset.station);
+    button.setAttribute("aria-pressed", String(station === state.selected));
+  }
+  if (!urlLoaded) { urlInput.value = state.custom_url || ""; urlLoaded = true; }
+  showError(state.source === "AirPlay" ? "" : state.error);
+}
+async function request(options) {
+  const response = await fetch("/api/radio", {cache: "no-store", ...options,
+    signal: AbortSignal.timeout(8000)});
+  if (!response.ok) throw new Error(await response.text() || "Request failed (" + response.status + ")");
+  return response.json();
+}
+async function select(station, url) {
+  if (busy) return;
+  busy = true;
+  buttons.forEach(button => button.disabled = true);
+  try {
+    render(await request({method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({station, url})}));
+  } catch (err) { showError(err.message); }
+  finally { busy = false; buttons.forEach(button => button.disabled = false); }
+}
+document.querySelectorAll("[data-station]").forEach(button =>
+  button.addEventListener("click", () => select(Number(button.dataset.station))));
+document.getElementById("custom").addEventListener("submit", event => {
+  event.preventDefault();
+  select(4, urlInput.value.trim());
+});
+async function poll() {
+  if (!busy) {
+    try { render(await request()); }
+    catch (err) {
+      source.textContent = "Streamer unavailable";
+      document.getElementById("metadata-note").textContent = "Connection lost; displayed track information may be out of date.";
+      showError(err.message);
+    }
+  }
+  setTimeout(poll, 2500);
+}
+poll();
+</script>
+</body>
+</html>

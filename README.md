@@ -1,4 +1,20 @@
-# STR-E200ES Radio for Home Assistant
+# STR-E200ES Internet Radio & Home Assistant
+
+ESP32-S3 internet radio and AirPlay receiver with optical S/PDIF output,
+plus a HACS-installable Home Assistant integration.
+
+- [Firmware and build instructions](firmware/README-RADIO.md): GPIO14 S/PDIF,
+  four radio presets, custom MP3/AAC streams, AirPlay, playback LED and a
+  webpage showing live song and stream information.
+- [Firmware provenance and licensing](firmware/PROVENANCE.md): upstream source,
+  local improvements and validation limitations.
+- Home Assistant installation and controls are documented below. The integration
+  remains at `custom_components/str_e200es_radio` so existing HACS installs keep working.
+
+Firmware and Home Assistant updates are separate: updating through HACS does
+not flash the ESP or update its webpage.
+
+## Home Assistant integration
 
 A local, HACS-installable custom integration for the ESP32-S3 radio/AirPlay
 firmware's HTTP API. No MQTT, cloud account or firmware change is required.
@@ -118,5 +134,8 @@ python -m unittest discover -s tests -v
 python -m compileall -q custom_components tests
 ```
 
-The project is independent of the radio's upstream AirPlay implementation; it
-contains only the HTTP client and Home Assistant entities.
+The Home Assistant integration is an independent HTTP client and set of entities.
+Its MIT license is in [LICENSE](LICENSE). The bundled firmware is a derivative
+of `rbouteiller/airplay-esp32` and has a separate
+[non-commercial license](firmware/LICENSE); the root MIT license does not
+relicense the firmware or its dependencies.
