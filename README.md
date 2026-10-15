@@ -27,6 +27,7 @@ when supplied by the station or AirPlay app. Optical output is fixed at
 
 - [Hardware, build, installation and update guide](firmware/README-RADIO.md)
 - [Upstream attribution, improvements and validation limitations](firmware/PROVENANCE.md)
+- [V2 development: UART controllers, AirPlay override and revised wiring](firmware/V2.md)
 
 **Home Assistant and HACS are not required.** The device's default AirPlay name
 remains **STR-E200ES**. ESP32-S3 does not support Bluetooth Classic/A2DP audio.

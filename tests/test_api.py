@@ -114,6 +114,25 @@ class HttpTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.source, "AirPlay")
         self.assertEqual(result.selected, 3)
 
+    async def test_v2_airplay_conflict(self):
+        self.state.update(source="AirPlay", radio_playing=False)
+        before = self.state.copy()
+        self.http_status = 409
+        with self.assertRaisesRegex(api.RadioError, "HTTP 409"):
+            await self.client.select(4, "https://example.com/new.mp3")
+        self.assertEqual(self.state, before)
+
+    async def test_v2_status_extra_fields(self):
+        self.state.update(
+            protocol_version=2, radio_changes_blocked=True,
+            source="AirPlay", radio_playing=False,
+            now_playing={"title": "Example track", "codec": "ALAC"},
+            sony_pcm_enabled=False, dit_pcm_enabled=False,
+        )
+        result = await self.client.status()
+        self.assertEqual(result.source, "AirPlay")
+        self.assertFalse(result.radio_playing)
+
     async def test_http_failure(self):
         self.http_status = 500
         with self.assertRaises(api.RadioError):

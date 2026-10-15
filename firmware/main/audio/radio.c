@@ -2,6 +2,8 @@
 #include "audio_output.h"
 #include "audio_receiver.h"
 #include "icy_metadata.h"
+#include "radio_command.h"
+#include "rtsp_server.h"
 
 #include "cJSON.h"
 #include "esp_audio_simple_dec.h"
@@ -39,6 +41,7 @@ static const char *urls[] = {
     "http://playerservices.streamtheworld.com/api/livestream-redirect/SLAM_MP3.mp3"};
 
 static SemaphoreHandle_t lock;
+static SemaphoreHandle_t command_lock;
 static StreamBufferHandle_t compressed;
 static StaticStreamBuffer_t compressed_control;
 static RingbufHandle_t pcm_queue;
@@ -93,19 +96,21 @@ static void airplay_event(rtsp_event_t event, const rtsp_event_data_t *data, voi
     xSemaphoreGive(lock);
   }
   if (event == RTSP_EVENT_CLIENT_CONNECTED || event == RTSP_EVENT_PLAYING) {
+    xSemaphoreTake(lock, portMAX_DELAY);
     if (!atomic_exchange(&airplay, true)) {
-      xSemaphoreTake(lock, portMAX_DELAY);
       memset(&airplay_metadata, 0, sizeof(airplay_metadata));
-      xSemaphoreGive(lock);
       atomic_fetch_add(&generation, 1);
       ESP_LOGI(TAG, "AirPlay connected; radio yields the output");
     }
-  } else if (event == RTSP_EVENT_DISCONNECTED && atomic_exchange(&airplay, false)) {
-    xSemaphoreTake(lock, portMAX_DELAY);
-    memset(&airplay_metadata, 0, sizeof(airplay_metadata));
     xSemaphoreGive(lock);
-    atomic_fetch_add(&generation, 1);
-    ESP_LOGI(TAG, "AirPlay disconnected; resuming selected radio");
+  } else if (event == RTSP_EVENT_DISCONNECTED) {
+    xSemaphoreTake(lock, portMAX_DELAY);
+    if (atomic_exchange(&airplay, false)) {
+      memset(&airplay_metadata, 0, sizeof(airplay_metadata));
+      atomic_fetch_add(&generation, 1);
+      ESP_LOGI(TAG, "AirPlay disconnected; resuming selected radio");
+    }
+    xSemaphoreGive(lock);
   }
 }
 
@@ -412,19 +417,9 @@ size_t radio_read(int16_t *pcm, size_t frames, uint32_t *rate) {
   return 0;
 }
 
-static bool valid_url(const char *url) {
-  if (!url || strlen(url) >= URL_SIZE) return false;
-  const char *host = !strncmp(url, "http://", 7) ? url + 7 :
-                     (!strncmp(url, "https://", 8) ? url + 8 : NULL);
-  if (!host || !*host || *host == '/') return false;
-  for (const unsigned char *p = (const unsigned char *)url; *p; ++p)
-    if (*p <= 32 || *p >= 127 || *p == '\\' || *p == '#' || *p == '@') return false;
-  return true;
-}
-
-static esp_err_t status_handler(httpd_req_t *req) {
+cJSON *radio_status_json(void) {
   cJSON *root = cJSON_CreateObject();
-  if (!root) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+  if (!root) return NULL;
   audio_diagnostics_t diagnostics;
   audio_receiver_get_diagnostics(&diagnostics);
   xSemaphoreTake(lock, portMAX_DELAY);
@@ -437,7 +432,7 @@ static esp_err_t status_handler(httpd_req_t *req) {
   if (!now_playing) {
     xSemaphoreGive(lock);
     cJSON_Delete(root);
-    return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+    return NULL;
   }
   cJSON_AddStringToObject(now_playing, "title", ap ? airplay_metadata.title : radio_title);
   cJSON_AddStringToObject(now_playing, "artist", ap ? airplay_metadata.artist : "");
@@ -458,7 +453,14 @@ static esp_err_t status_handler(httpd_req_t *req) {
   cJSON_AddNumberToObject(root, "frames_played", atomic_load(&frames_played));
   cJSON_AddNumberToObject(root, "buffer_bytes", xStreamBufferBytesAvailable(compressed));
   cJSON_AddNumberToObject(root, "uptime_seconds", esp_timer_get_time() / 1000000);
-  cJSON_AddNumberToObject(root, "spdif_gpio", 14);
+  cJSON_AddNumberToObject(root, "spdif_gpio", CONFIG_SPDIF_DO_IO);
+#ifdef CONFIG_RADIO_V2
+  cJSON_AddNumberToObject(root, "protocol_version", 2);
+  cJSON_AddBoolToObject(root, "radio_changes_blocked", ap);
+  cJSON_AddNumberToObject(root, "coax_gpio", 47);
+  cJSON_AddBoolToObject(root, "sony_pcm_enabled", false);
+  cJSON_AddBoolToObject(root, "dit_pcm_enabled", false);
+#endif
   cJSON_AddNumberToObject(root, "spdif_errors", audio_output_get_write_errors());
   cJSON_AddNumberToObject(root, "spdif_dma_underruns", audio_output_get_underruns());
   cJSON_AddNumberToObject(root, "internal_heap", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
@@ -466,10 +468,13 @@ static esp_err_t status_handler(httpd_req_t *req) {
       (atomic_load(&codec) == ESP_AUDIO_SIMPLE_DEC_TYPE_MP3 ? "MP3" :
        atomic_load(&codec) == ESP_AUDIO_SIMPLE_DEC_TYPE_AAC ? "AAC" : ""));
   cJSON_AddNumberToObject(now_playing, "output_sample_rate", CONFIG_OUTPUT_SAMPLE_RATE_HZ);
+  cJSON_AddNumberToObject(now_playing, "output_bits_per_sample", 16);
+  cJSON_AddNumberToObject(now_playing, "source_bits_per_sample",
+                          ap ? diagnostics.format.bits_per_sample : 0);
   cJSON *airplay_status = cJSON_AddObjectToObject(root, "airplay");
   if (!airplay_status) {
     cJSON_Delete(root);
-    return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
+    return NULL;
   }
   cJSON_AddNumberToObject(airplay_status, "stream_type", diagnostics.stream_type);
   cJSON_AddBoolToObject(airplay_status, "playing", ap && audio_receiver_is_playing());
@@ -484,7 +489,12 @@ static esp_err_t status_handler(httpd_req_t *req) {
   cJSON_AddNumberToObject(airplay_status, "buffer_underflows", diagnostics.stats.buffer_underruns);
   cJSON_AddNumberToObject(airplay_status, "buffer_overflows", diagnostics.stats.buffer_overruns);
   cJSON_AddNumberToObject(airplay_status, "late_frames", diagnostics.stats.late_frames);
-  char *json = cJSON_PrintUnformatted(root);
+  return root;
+}
+
+static esp_err_t status_handler(httpd_req_t *req) {
+  cJSON *root = radio_status_json();
+  char *json = root ? cJSON_PrintUnformatted(root) : NULL;
   cJSON_Delete(root);
   if (!json) return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Out of memory");
   httpd_resp_set_type(req, "application/json");
@@ -494,44 +504,64 @@ static esp_err_t status_handler(httpd_req_t *req) {
   return result;
 }
 
-static esp_err_t select_handler(httpd_req_t *req) {
-  char body[768];
-  if (!req->content_len || req->content_len >= sizeof(body))
-    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid request size");
-  size_t received = 0;
-  while (received < req->content_len) {
-    int n = httpd_req_recv(req, body + received, req->content_len - received);
-    if (n <= 0) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Incomplete request");
-    received += n;
+int radio_apply_command(const cJSON *json, const char **message) {
+  radio_command_t command;
+  *message = "Choose station 0-4 or a direct HTTP/HTTPS URL; override must be boolean";
+  if (!radio_command_parse(json, &command)) return 400;
+#ifndef CONFIG_RADIO_V2
+  if (command.override) {
+    *message = "AirPlay override requires V2 firmware";
+    return 400;
   }
-  body[received] = 0;
-  cJSON *json = cJSON_Parse(body);
-  cJSON *id = cJSON_GetObjectItemCaseSensitive(json, "station");
-  cJSON *url = cJSON_GetObjectItemCaseSensitive(json, "url");
-  if (!cJSON_IsNumber(id) || id->valuedouble != id->valueint ||
-      id->valueint < 0 || id->valueint > 4 ||
-      (id->valueint == 4 && (!cJSON_IsString(url) || !valid_url(url->valuestring)))) {
-    cJSON_Delete(json);
-    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-        "Choose station 0-4; custom streams need a direct HTTP/HTTPS MP3 or AAC URL");
+#endif
+  if (xSemaphoreTake(command_lock, pdMS_TO_TICKS(250)) != pdTRUE) {
+    *message = "Another radio command is in progress; retry after its response";
+    ESP_LOGW(TAG, "%s", *message);
+    return 503;
   }
-  if (id->valueint == 4) {
+  bool blocked = false;
+#ifdef CONFIG_RADIO_V2
+  if (command.override) {
+    blocked = true;
+    if (rtsp_server_override_begin(5000) != ESP_OK) {
+      rtsp_server_override_end();
+      xSemaphoreGive(command_lock);
+      *message = "AirPlay disconnect timed out; radio selection not changed";
+      ESP_LOGE(TAG, "%s", *message);
+      return 503;
+    }
+  }
+#endif
+  xSemaphoreTake(lock, portMAX_DELAY);
+#ifdef CONFIG_RADIO_V2
+  if (atomic_load(&airplay)) {
+    xSemaphoreGive(lock);
+    if (blocked) rtsp_server_override_end();
+    xSemaphoreGive(command_lock);
+    *message = "AirPlay owns playback; use override:true to disconnect it";
+    ESP_LOGW(TAG, "%s", *message);
+    return 409;
+  }
+#endif
+  if (command.station == 4) {
     nvs_handle_t nvs;
     esp_err_t err = nvs_open("radio", NVS_READWRITE, &nvs);
     if (err == ESP_OK) {
-      err = nvs_set_str(nvs, "custom_url", url->valuestring);
+      err = nvs_set_str(nvs, "custom_url", command.url);
       if (err == ESP_OK) err = nvs_commit(nvs);
       nvs_close(nvs);
     }
     if (err != ESP_OK) {
       ESP_LOGE(TAG, "Cannot save custom URL: %s", esp_err_to_name(err));
-      cJSON_Delete(json);
-      return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Cannot save custom stream");
+      xSemaphoreGive(lock);
+      if (blocked) rtsp_server_override_end();
+      xSemaphoreGive(command_lock);
+      *message = "Cannot save custom stream";
+      return 500;
     }
   }
-  xSemaphoreTake(lock, portMAX_DELAY);
-  selected = id->valueint;
-  if (selected == 4) strlcpy(custom_url, url->valuestring, sizeof(custom_url));
+  selected = command.station;
+  if (selected == 4) strlcpy(custom_url, command.url, sizeof(custom_url));
   error_text[0] = 0;
   radio_title[0] = stream_name[0] = stream_content_type[0] = stream_bitrate[0] = 0;
   stream_url[0] = 0;
@@ -541,7 +571,34 @@ static esp_err_t select_handler(httpd_req_t *req) {
   atomic_store(&decoding, false);
   atomic_fetch_add(&generation, 1);
   xSemaphoreGive(lock);
+  if (blocked) rtsp_server_override_end();
+  xSemaphoreGive(command_lock);
+  *message = "Selection accepted; playback may still be buffering";
+  return 200;
+}
+
+static esp_err_t select_handler(httpd_req_t *req) {
+  char body[1024];
+  if (!req->content_len || req->content_len >= sizeof(body))
+    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid request size");
+  size_t received = 0;
+  while (received < req->content_len) {
+    int n = httpd_req_recv(req, body + received, req->content_len - received);
+    if (n <= 0) return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Incomplete request");
+    received += n;
+  }
+  body[received] = 0;
+  cJSON *json = radio_json_parse(body, received);
+  const char *message;
+  int code = radio_apply_command(json, &message);
   cJSON_Delete(json);
+  if (code != 200) {
+    httpd_resp_set_status(req, code == 409 ? "409 Conflict" :
+        code == 503 ? "503 Service Unavailable" : code == 500 ?
+        "500 Internal Server Error" : "400 Bad Request");
+    httpd_resp_set_type(req, "text/plain");
+    return httpd_resp_send(req, message, HTTPD_RESP_USE_STRLEN);
+  }
   return status_handler(req);
 }
 
@@ -554,8 +611,11 @@ esp_err_t radio_register_http(httpd_handle_t server) {
 }
 
 esp_err_t radio_init(void) {
+  esp_err_t control_err = rtsp_server_control_init();
+  if (control_err != ESP_OK) return control_err;
   lock = xSemaphoreCreateMutex();
-  if (!lock) return ESP_ERR_NO_MEM;
+  command_lock = xSemaphoreCreateMutex();
+  if (!lock || !command_lock) return ESP_ERR_NO_MEM;
   uint8_t *storage = heap_caps_malloc(COMPRESSED_BYTES + 1, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (!storage) return ESP_ERR_NO_MEM;
   compressed = xStreamBufferCreateStatic(COMPRESSED_BYTES + 1, 1, storage, &compressed_control);

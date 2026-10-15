@@ -7,6 +7,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <stdatomic.h>
 
 #include "audio_receiver.h"
 #include "audio_output.h"
@@ -14,6 +15,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 
 #include "rtsp_conn.h"
 #include "rtsp_crypto.h"
@@ -37,6 +39,17 @@ static const char *TAG = "rtsp_server";
 static int server_socket = -1;
 static TaskHandle_t server_task_handle = NULL;
 static bool server_running = false;
+static SemaphoreHandle_t admission_lock;
+static atomic_bool radio_override;
+
+esp_err_t rtsp_server_control_init(void) {
+  if (!admission_lock) admission_lock = xSemaphoreCreateMutex();
+  return admission_lock ? ESP_OK : ESP_ERR_NO_MEM;
+}
+
+void rtsp_server_override_end(void) {
+  atomic_store(&radio_override, false);
+}
 
 // RTSP tasks are restartable. Use dynamic TCB allocation so
 // reconnect/start-stop paths cannot reuse static task memory before FreeRTOS
@@ -53,6 +66,26 @@ typedef struct {
 
 static client_slot_t clients[2] = {0}; // Current and old
 static int current_slot = 0;
+
+esp_err_t rtsp_server_override_begin(uint32_t timeout_ms) {
+  if (!admission_lock) return ESP_ERR_INVALID_STATE;
+  atomic_store(&radio_override, true);
+  TickType_t start = xTaskGetTickCount();
+  TickType_t timeout = pdMS_TO_TICKS(timeout_ms);
+  if (xSemaphoreTake(admission_lock, timeout) != pdTRUE) return ESP_ERR_TIMEOUT;
+  for (int i = 0; i < 2; ++i) {
+    if (clients[i].task) {
+      clients[i].should_stop = true;
+      if (clients[i].socket >= 0) shutdown(clients[i].socket, SHUT_RDWR);
+    }
+  }
+  xSemaphoreGive(admission_lock);
+  while (clients[0].task || clients[1].task) {
+    if (xTaskGetTickCount() - start >= timeout) return ESP_ERR_TIMEOUT;
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+  return ESP_OK;
+}
 
 // Flag set by the play/pause button to tell the grace period loop
 // to send a DACP resume command and keep waiting for reconnect.
@@ -465,6 +498,12 @@ static void server_task(void *pvParameters) {
     }
 
     ESP_LOGI(TAG, "New client connected");
+    xSemaphoreTake(admission_lock, portMAX_DELAY);
+    if (atomic_load(&radio_override)) {
+      close(new_socket);
+      xSemaphoreGive(admission_lock);
+      continue;
+    }
 
     // Find slot for new client (alternate between 0 and 1)
     int new_slot = 1 - current_slot;
@@ -484,6 +523,7 @@ static void server_task(void *pvParameters) {
       if (clients[new_slot].task != NULL) {
         ESP_LOGE(TAG, "Slot %d task did not exit in time", new_slot);
         close(new_socket);
+        xSemaphoreGive(admission_lock);
         continue;
       }
     }
@@ -507,6 +547,7 @@ static void server_task(void *pvParameters) {
     } else {
       current_slot = new_slot;
     }
+    xSemaphoreGive(admission_lock);
   }
 
   // Stop all clients
@@ -538,6 +579,8 @@ static bool rtsp_server_wait_for_task_stopped(int timeout_ticks) {
 }
 
 esp_err_t rtsp_server_start(void) {
+  esp_err_t control_err = rtsp_server_control_init();
+  if (control_err != ESP_OK) return control_err;
   if (server_task_handle != NULL) {
     if (server_running) {
       return ESP_ERR_INVALID_STATE;

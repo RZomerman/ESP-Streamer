@@ -566,6 +566,10 @@ void audio_receiver_get_diagnostics(audio_diagnostics_t *diagnostics) {
   if (!diagnostics) {
     return;
   }
+  if (!receiver.buffer.pool) {
+    memset(diagnostics, 0, sizeof(*diagnostics));
+    return;
+  }
   audio_receiver_get_stats(&diagnostics->stats);
   diagnostics->stream_type = receiver.stream ? receiver.stream->type : AUDIO_STREAM_NONE;
   diagnostics->gaps = receiver.timing.gaps;

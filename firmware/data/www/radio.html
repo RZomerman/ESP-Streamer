@@ -99,11 +99,15 @@ dd { margin: 0; overflow-wrap: anywhere; }
 <body>
 <main>
 <h1>Internet Radio &amp; AirPlay</h1>
-<p class="muted">Optical S/PDIF on GPIO14 &middot; 48 kHz stereo</p>
+<p class="muted" id="output-detail">Optical S/PDIF &middot; 48 kHz stereo</p>
 <section class="card" aria-label="Playback status" aria-live="polite">
   <div class="status" id="source">Connecting to the streamer...</div>
   <p id="detail" class="muted">NPO Radio 2 is the default on every boot.</p>
   <p id="error" role="alert" hidden></p>
+  <label id="override-option" hidden>
+    <input type="checkbox" id="override-airplay">
+    Disconnect AirPlay when selecting a radio station or custom URL
+  </label>
 </section>
 <section class="card" aria-label="Now playing" aria-live="polite">
   <h2>Now playing</h2>
@@ -127,7 +131,7 @@ dd { margin: 0; overflow-wrap: anywhere; }
     <button type="button" data-station="1" aria-pressed="false">BNR Radio</button>
     <button type="button" data-station="3" aria-pressed="false">SLAM! FM</button>
   </div>
-  <p class="muted">While AirPlay is connected, your selection is queued for when you disconnect.</p>
+  <p class="muted" id="airplay-policy">Radio controls follow the receiver's AirPlay policy.</p>
 </section>
 <section class="card">
   <h2>Your own stream</h2>
@@ -154,13 +158,25 @@ const detail = document.getElementById("detail");
 const error = document.getElementById("error");
 const urlInput = document.getElementById("url");
 const buttons = [...document.querySelectorAll("button")];
+const overrideInput = document.getElementById("override-airplay");
 let busy = false;
 let urlLoaded = false;
+let lastState;
 function showError(message) {
   error.textContent = message;
   error.hidden = !message;
 }
 function render(state) {
+  lastState = state;
+  const v2 = state.protocol_version === 2;
+  document.getElementById("output-detail").textContent =
+    "Optical S/PDIF on GPIO" + state.spdif_gpio +
+    (state.coax_gpio === undefined ? "" : " / coax GPIO" + state.coax_gpio) +
+    " \u00b7 48 kHz stereo";
+  document.getElementById("override-option").hidden = !v2;
+  document.getElementById("airplay-policy").textContent = v2 ?
+    "AirPlay blocks radio changes. Enable explicit disconnect above to switch to radio." :
+    "While AirPlay is connected, your selection is queued for when you disconnect.";
   source.textContent = state.source === "AirPlay" ? "AirPlay connected" :
     (state.radio_playing ? state.station : "Connecting to " + state.station + "...");
   detail.textContent = state.source === "AirPlay" ?
@@ -192,6 +208,7 @@ function render(state) {
   for (const button of buttons) {
     const station = button.dataset.station === undefined ? 4 : Number(button.dataset.station);
     button.setAttribute("aria-pressed", String(station === state.selected));
+    button.disabled = busy || (state.radio_changes_blocked && !overrideInput.checked);
   }
   if (!urlLoaded) { urlInput.value = state.custom_url || ""; urlLoaded = true; }
   showError(state.source === "AirPlay" ? "" : state.error);
@@ -207,11 +224,19 @@ async function select(station, url) {
   busy = true;
   buttons.forEach(button => button.disabled = true);
   try {
-    render(await request({method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({station, url})}));
+    const override = lastState?.protocol_version === 2 && overrideInput.checked;
+    const state = await request({method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({station, url, ...(override ? {override: true} : {})})});
+    overrideInput.checked = false;
+    render(state);
   } catch (err) { showError(err.message); }
-  finally { busy = false; buttons.forEach(button => button.disabled = false); }
+  finally {
+    busy = false;
+    buttons.forEach(button =>
+      button.disabled = !!lastState?.radio_changes_blocked && !overrideInput.checked);
+  }
 }
+overrideInput.addEventListener("change", () => { if (lastState) render(lastState); });
 document.querySelectorAll("[data-station]").forEach(button =>
   button.addEventListener("click", () => select(Number(button.dataset.station))));
 document.getElementById("custom").addEventListener("submit", event => {

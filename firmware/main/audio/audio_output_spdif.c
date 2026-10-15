@@ -6,6 +6,11 @@
 #include "led.h"
 #include "rtsp_server.h"
 #include "driver/i2s_std.h"
+#ifdef CONFIG_RADIO_V2
+#include "driver/gpio.h"
+#include "esp_rom_gpio.h"
+#include "soc/gpio_sig_map.h"
+#endif
 #include "esp_check.h"
 #include "esp_attr.h"
 #include "esp_timer.h"
@@ -184,6 +189,11 @@ esp_err_t audio_output_init(void) {
                    .ws = I2S_GPIO_UNUSED, .dout = CONFIG_SPDIF_DO_IO,
                    .din = I2S_GPIO_UNUSED}};
   ESP_RETURN_ON_ERROR(i2s_channel_init_std_mode(tx, &cfg), TAG, "I2S configuration");
+#ifdef CONFIG_RADIO_V2
+  ESP_RETURN_ON_ERROR(gpio_set_direction(GPIO_NUM_47, GPIO_MODE_OUTPUT), TAG, "Coax GPIO");
+  esp_rom_gpio_connect_out_signal(GPIO_NUM_47, I2S0O_SD_OUT_IDX, false, false);
+  ESP_LOGI(TAG, "S/PDIF mirrored to GPIO47; Sony/DIT PCM outputs disabled");
+#endif
   i2s_event_callbacks_t callbacks = {.on_sent = spdif_on_sent};
   ESP_RETURN_ON_ERROR(i2s_channel_register_event_callback(tx, &callbacks, NULL),
                       TAG, "I2S completion callback");

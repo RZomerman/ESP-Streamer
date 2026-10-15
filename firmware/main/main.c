@@ -18,6 +18,7 @@
 #include "wifi.h"
 #include "spiffs_storage.h"
 #include "radio.h"
+#include "radio_serial.h"
 
 #ifdef CONFIG_BT_A2DP_ENABLE
 #include "a2dp_sink.h"
@@ -235,6 +236,7 @@ void app_main(void) {
     }
   }
   ESP_ERROR_CHECK(radio_init());
+  ESP_ERROR_CHECK(radio_serial_init());
 #ifdef CONFIG_DAC_TAS57XX
   // Load persisted sub level offset (pre-init safe; applied on first volume).
   float sub_off;

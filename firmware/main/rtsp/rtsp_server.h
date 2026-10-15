@@ -13,6 +13,9 @@ esp_err_t rtsp_server_start(void);
  * Stop the RTSP server
  */
 void rtsp_server_stop(void);
+esp_err_t rtsp_server_control_init(void);
+esp_err_t rtsp_server_override_begin(uint32_t timeout_ms);
+void rtsp_server_override_end(void);
 
 /**
  * Set volume from AirPlay (in dB, range -144 to 0)

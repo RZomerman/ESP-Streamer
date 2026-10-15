@@ -8,6 +8,10 @@ S/PDIF output, the playback LED, its own control webpage and the local HTTP API.
 It works without Home Assistant or HACS. The default AirPlay receiver name
 remains **STR-E200ES**.
 
+For the separate UART-controller development profile, changed wiring and
+AirPlay override policy, see [Core V2](V2.md). V1 behavior below remains the
+default `radio-s3` build; V2 must be selected explicitly.
+
 Hobby/non-commercial adaptation of [rbouteiller/airplay-esp32](https://github.com/rbouteiller/airplay-esp32).
 The upstream license and third-party notices remain applicable.
 

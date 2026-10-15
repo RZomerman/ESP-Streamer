@@ -43,6 +43,12 @@ station during setup/restart. During AirPlay, preset/custom selections are queue
 for playback when AirPlay disconnects. No AirPlay disconnect or pause control is
 exposed: the firmware API does not provide one.
 
+The opt-in [Core V2 profile](../firmware/V2.md) intentionally rejects ordinary
+radio changes during AirPlay instead of queuing them. This integration reports
+the HTTP 409 conflict and does not change the saved selection. V2's explicit
+AirPlay override is available through its device webpage/API and UART
+controllers, not through these Home Assistant entities.
+
 ## Install via HACS
 
 1. HACS -> menu -> Custom repositories.
