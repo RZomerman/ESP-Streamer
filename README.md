@@ -1,141 +1,62 @@
-# STR-E200ES Internet Radio & Home Assistant
+# ESP-Streamer
 
-ESP32-S3 internet radio and AirPlay receiver with optical S/PDIF output,
-plus a HACS-installable Home Assistant integration.
+An ESP32-S3 internet radio and AirPlay receiver, with an optional Home Assistant
+integration. This repository contains **two separate parts**:
 
-- [Firmware and build instructions](firmware/README-RADIO.md): GPIO14 S/PDIF,
-  four radio presets, custom MP3/AAC streams, AirPlay, playback LED and a
-  webpage showing live song and stream information.
-- [Firmware provenance and licensing](firmware/PROVENANCE.md): upstream source,
-  local improvements and validation limitations.
-- Home Assistant installation and controls are documented below. The integration
-  remains at `custom_components/str_e200es_radio` so existing HACS installs keep working.
+| | ESP-Streamer Core | ESP-Streamer integration for Home Assistant |
+|---|---|---|
+| Runs on | ESP32-S3 | Home Assistant |
+| Purpose | Plays internet radio and receives AirPlay audio | Controls an existing Core device over its local HTTP API |
+| Features | Radio presets, custom MP3/AAC streams, GPIO14 optical S/PDIF, playback LED, webpage with song/stream information | Four preset buttons, custom URL input/play button, station/source/playback sensors |
+| Needs Home Assistant? | **No** | **Yes**, plus a compatible Core device |
+| Installation | Build and flash firmware; install its SPIFFS webpage | Install through HACS, restart Home Assistant, add the device |
+| Updates | Firmware and webpage deployment to the ESP | HACS update and Home Assistant restart |
+| Source | [`firmware/`](firmware/) | [`custom_components/str_e200es_radio/`](custom_components/str_e200es_radio/) |
+| Guide | [Core setup, hardware and updates](firmware/README-RADIO.md) | [Home Assistant setup, controls and updates](docs/HOME-ASSISTANT.md) |
+| License | [Non-commercial upstream license](firmware/LICENSE) | [MIT](LICENSE) |
 
-Firmware and Home Assistant updates are separate: updating through HACS does
-not flash the ESP or update its webpage.
+## 1. ESP-Streamer Core
 
-## Home Assistant integration
+The standalone radio: it starts **NPO Radio 2** on boot, offers **BNR Radio**,
+**Radio 538** and **SLAM! FM**, and accepts a custom direct MP3/AAC stream URL.
+AirPlay takes over the output while connected; radio resumes after disconnect.
 
-A local, HACS-installable custom integration for the ESP32-S3 radio/AirPlay
-firmware's HTTP API. No MQTT, cloud account or firmware change is required.
+Control Core directly through its own webpage, including live song metadata
+when supplied by the station or AirPlay app. Optical output is fixed at
+48 kHz stereo, 16-bit PCM on GPIO14.
 
-## Controls
+- [Hardware, build, installation and update guide](firmware/README-RADIO.md)
+- [Upstream attribution, improvements and validation limitations](firmware/PROVENANCE.md)
 
-- Four native buttons: NPO Radio 2, BNR Radio, Radio 538 and SLAM! FM.
-- Custom stream URL text entity (up to 511 ASCII characters).
-- Play custom stream button.
-- Selected station, audio source and playback status sensors.
+**Home Assistant and HACS are not required.** The device's default AirPlay name
+remains **STR-E200ES**. ESP32-S3 does not support Bluetooth Classic/A2DP audio.
 
-**Editing the URL saves a draft in Home Assistant without changing playback.**
-Press **Play custom stream** to send it to the radio and persist it there.
-Until an HA draft is saved, the input shows the custom URL stored on the radio.
-An HA draft takes precedence over later edits made on the radio webpage.
-Clear the field to clear the HA draft; playing requires a nonempty valid URL.
+## 2. ESP-Streamer integration for Home Assistant
 
-Use a direct HTTP/HTTPS MP3 or AAC/ADTS URL, not a website, playlist, HLS or
-Spotify URL. The firmware supports 32, 44.1 and 48 kHz audio.
-Spaces, non-ASCII characters, fragments and URL credentials are rejected.
+An optional local control layer for Core. It adds station buttons, custom
+stream controls and status sensors to Home Assistant, without replacing Core's
+webpage or audio functions.
 
-The radio still starts NPO Radio 2 on boot. Home Assistant does not change the
-station during setup/restart. During AirPlay, preset/custom selections are queued
-for playback when AirPlay disconnects. No AirPlay disconnect or pause control is
-exposed: the firmware API does not provide one.
+- [HACS installation and configuration](docs/HOME-ASSISTANT.md#install-via-hacs)
+- [Controls and example dashboard](docs/HOME-ASSISTANT.md#controls)
+- [Integration updates and removal](docs/HOME-ASSISTANT.md#update-or-remove-the-integration)
 
-## Install via HACS
+For compatibility, the current HACS/Home Assistant listing is still named
+**STR-E200ES Radio**. The integration domain and existing entity IDs are unchanged.
 
-Requires Home Assistant 2026.9.0 or newer.
+## Which part should I install or update?
 
-1. HACS -> menu -> Custom repositories.
-2. Add `https://github.com/RZomerman/ESP-Streamer` as **Integration**.
-3. Find **STR-E200ES Radio**, download, and restart Home Assistant.
-4. Settings -> Devices & services -> Add integration -> **STR-E200ES Radio**.
-5. Enter the **radio's** IP address (`172.16.5.21`) and HTTP port (`80`).
+- **Building a new radio:** start with the [Core guide](firmware/README-RADIO.md).
+- **Adding a working radio to Home Assistant:** use the
+  [integration guide](docs/HOME-ASSISTANT.md).
+- **Updating radio, AirPlay or the device webpage:** update
+  [Core](firmware/README-RADIO.md#updating-core).
+- **Updating Home Assistant controls:** update the
+  [integration through HACS](docs/HOME-ASSISTANT.md#update-or-remove-the-integration).
 
-The Home Assistant address (`172.16.5.74:80`) is not the radio address.
-Reserve the radio's address in DHCP. To update a changed IP, run Add integration
-again with the new address; matching MAC identity updates the existing entry.
+**HACS never flashes the ESP or updates its webpage.** Updating Core does not
+install or update Home Assistant entities. These are separate deployments,
+even though their source is maintained in one repository.
 
-All entities appear under one device named using the receiver's saved name
-(currently STR-E200ES). Add them to a dashboard using Home Assistant's native
-button and entities cards. HACS installation does not automatically modify your
-existing dashboards.
-
-### Example dashboard
-
-Replace these example entity IDs with the ones generated by your installation.
-
-```yaml
-type: vertical-stack
-cards:
-  - type: grid
-    columns: 2
-    square: false
-    cards:
-      - type: button
-        entity: button.str_e200es_npo_radio_2
-        name: NPO Radio 2
-        tap_action:
-          action: perform-action
-          perform_action: button.press
-          target:
-            entity_id: button.str_e200es_npo_radio_2
-      - type: button
-        entity: button.str_e200es_bnr_radio
-        name: BNR Radio
-        tap_action:
-          action: perform-action
-          perform_action: button.press
-          target:
-            entity_id: button.str_e200es_bnr_radio
-      - type: button
-        entity: button.str_e200es_radio_538
-        name: Radio 538
-        tap_action:
-          action: perform-action
-          perform_action: button.press
-          target:
-            entity_id: button.str_e200es_radio_538
-      - type: button
-        entity: button.str_e200es_slam_fm
-        name: SLAM! FM
-        tap_action:
-          action: perform-action
-          perform_action: button.press
-          target:
-            entity_id: button.str_e200es_slam_fm
-  - type: entities
-    entities:
-      - text.str_e200es_custom_stream_url
-      - button.str_e200es_play_custom_stream
-      - sensor.str_e200es_selected_station
-      - sensor.str_e200es_audio_source
-      - sensor.str_e200es_playback_status
-```
-
-## Behavior and errors
-
-Status polls every five seconds with an eight-second HTTP timeout. Offline or
-invalid API responses mark the device entities unavailable. Commands confirm
-the selected station in the API response, not successful remote-stream playback.
-Stream errors are shown by the Playback status sensor's `stream_error` attribute.
-The Audio source sensor reports AirPlay ownership, not whether it is paused.
-No fabricated play/pause, volume or power controls are exposed.
-
-Use on a trusted LAN. The radio API is unauthenticated; do not expose it publicly.
-No Wi-Fi passwords or other device settings are collected or stored by this
-integration. Device identity uses its MAC, so multiple radios can be configured.
-
-## Development
-
-API tests use Python's unittest runner and aiohttp, without Home Assistant:
-
-```powershell
-python -m unittest discover -s tests -v
-python -m compileall -q custom_components tests
-```
-
-The Home Assistant integration is an independent HTTP client and set of entities.
-Its MIT license is in [LICENSE](LICENSE). The bundled firmware is a derivative
-of `rbouteiller/airplay-esp32` and has a separate
-[non-commercial license](firmware/LICENSE); the root MIT license does not
-relicense the firmware or its dependencies.
+Use both parts on a trusted LAN; the Core HTTP API is unauthenticated and
+must not be exposed directly to the Internet.

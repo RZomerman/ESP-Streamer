@@ -1,4 +1,12 @@
-# ESP32-S3 Internet Radio + AirPlay
+# ESP-Streamer Core
+
+[Project overview](../README.md) |
+[Optional Home Assistant integration](../docs/HOME-ASSISTANT.md)
+
+The standalone ESP32-S3 internet radio and AirPlay firmware. Core handles audio,
+S/PDIF output, the playback LED, its own control webpage and the local HTTP API.
+It works without Home Assistant or HACS. The default AirPlay receiver name
+remains **STR-E200ES**.
 
 Hobby/non-commercial adaptation of [rbouteiller/airplay-esp32](https://github.com/rbouteiller/airplay-esp32).
 The upstream license and third-party notices remain applicable.
@@ -148,6 +156,34 @@ Radio layout:
 
 Keep the known-good standalone firmware and its matching partition/bootloader
 images for recovery. Future OTA updates must use this new partition layout.
+
+## Updating Core
+
+Core updates are separate from HACS updates. Build the application and SPIFFS
+image using the commands above. Read the partition migration warning before
+deploying to an existing device.
+
+- **Application:** the device's `/api/ota/update` endpoint accepts a raw
+  application image for a device already using this compatible radio partition
+  layout. An application update restarts the ESP and interrupts playback.
+  Do not send a filesystem or merged flash image to this endpoint.
+- **Webpage:** application OTA does not update SPIFFS. Deploy webpage changes
+  separately. The `/api/fs/upload?path=/spiffs/www/radio.html` endpoint accepts
+  the raw contents of `data/www/radio.html` for a homepage-only update.
+  Other web assets or a complete filesystem change require their corresponding
+  deployment; do not assume an application update installed them.
+- **USB recovery or partition changes:** check the actual USB port, current
+  partition layout and active OTA slot first. Preserve NVS and do not erase the
+  entire flash. Installing a different partition layout requires a matching
+  bootloader, partition table, application and filesystem.
+
+After updating, verify uptime, playback, source switching and the installed
+webpage. A successful upload alone does not verify audible output or stability.
+See the verification results and known limitations below.
+
+Updating Core does not install or update the Home Assistant integration.
+To update Home Assistant controls, follow the
+[separate HACS instructions](../docs/HOME-ASSISTANT.md#update-or-remove-the-integration).
 
 ## Implementation and validation
 
