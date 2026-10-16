@@ -74,16 +74,20 @@ changes, empty blocks/titles, apostrophes, the maximum 4080-byte ICY block,
 plain streams and missing-title metadata.
 
 Select the receiver in an Apple device's AirPlay audio menu on the same network.
-The default advertised name is **STR-E200ES**; it can be changed in `/settings`.
+The default advertised name is **STR-E300ES** on V2 (V1 uses STR-E200ES); it can be changed in `/settings`.
 An AirPlay connection preempts radio. Pausing keeps AirPlay ownership; disconnecting
 resumes the selected radio station. A station selected during AirPlay is queued
 for that fallback. The upstream reconnect grace period can delay fallback for a
 legacy AirPlay sender that still advertises its remote-control service.
 Radio volume is independent of the last AirPlay volume.
 
-The onboard addressable RGB LED (GPIO48) is solid green while decoded radio or
-AirPlay audio is being output, including quiet passages. It turns off when
-idle, buffering or paused (with a 250 ms hold to avoid flicker between frames).
+The onboard addressable RGB LED (GPIO48) is solid green while decoded radio
+audio is being output, including quiet passages. It turns off when radio is
+idle or buffering (with a 250 ms hold to avoid flicker between frames).
+While AirPlay owns the receiver, it blinks green one second ON / one second
+OFF, including while paused or waiting for audio. The blink begins ON when
+the playback task observes the connection; disconnecting returns to the radio
+playback indication. This behavior applies to both V1 and V2 builds.
 The receiver settings' LED brightness control still applies; zero disables it.
 The separate power LED, if fitted, cannot be controlled by firmware.
 
@@ -261,7 +265,7 @@ application update through the new layout's OTA endpoint. Verified:
 - Rapid station changes and HTTP 400 responses for invalid selection/URLs.
 - The device serves both `/` and `/settings`; browser tests cover selection,
   custom URL submission, queued AirPlay selection, errors and mobile themes.
-- User-confirmed clean AirPlay optical audio, green LED during playback,
+- Earlier firmware: user-confirmed clean AirPlay optical audio, green LED during playback,
   LED off on AirPlay pause, and automatic NPO/green-LED return on disconnect.
 
 These checks do not constitute an unattended long-duration stability guarantee.
@@ -272,7 +276,7 @@ Installed the receiver/core-assignment and sender-timeline fixes through the
 compatible OTA endpoint, preserving Wi-Fi settings, presets and custom URL.
 The sender was Spotify on an iPhone/iPad using ALAC/UDP.
 
-- User confirmed clean optical audio, LED off on pause, clean resume with
+- Earlier firmware: user confirmed clean optical audio, LED off on pause, clean resume with
   green LED, and automatic NPO fallback on disconnect.
 - During a five-minute capture, the steady AirPlay sample window was 245 s:
   three additional continuity gaps, versus dozens per second before the fix.

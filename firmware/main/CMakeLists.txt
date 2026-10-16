@@ -9,6 +9,7 @@ set( SRC_FILES
     "audio/audio_stream_buffered.c"
     "audio/audio_decoder.c"
     "audio/radio.c"
+    "audio/dit4096.c"
     "audio/radio_command.c"
     "audio/radio_line.c"
     "radio_serial.c"

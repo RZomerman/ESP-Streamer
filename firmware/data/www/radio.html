@@ -120,6 +120,7 @@ dd { margin: 0; overflow-wrap: anywhere; }
     <dt>Audio format</dt><dd id="stream-format">&mdash;</dd>
     <dt>Bitrate</dt><dd id="stream-bitrate">&mdash;</dd>
     <dt>Optical output</dt><dd>48 kHz &middot; stereo &middot; 16-bit PCM</dd>
+    <dt id="dit-label" hidden>DIT4096 output</dt><dd id="dit-detail" hidden></dd>
     <dt>Stream URL</dt><dd id="stream-url">&mdash;</dd>
   </dl>
 </section>
@@ -174,6 +175,17 @@ function render(state) {
     (state.coax_gpio === undefined ? "" : " / coax GPIO" + state.coax_gpio) +
     " \u00b7 48 kHz stereo";
   document.getElementById("override-option").hidden = !v2;
+  document.getElementById("dit-label").hidden = !state.dit_pcm_enabled;
+  const ditDetail = document.getElementById("dit-detail");
+  ditDetail.hidden = !state.dit_pcm_enabled;
+  const dit = state.dit || {};
+  ditDetail.textContent = (dit.running ?
+    (dit.sample_rate / 1000) + " kHz native PCM; MCLK " + dit.mclk_hz +
+      " Hz; BCK " + dit.bclk_hz + " Hz; 16-bit audio in 24-bit I2S" :
+    "Muted / buffering native PCM") +
+    "; write errors " + (dit.write_errors || 0) +
+    ", queue overflows " + (dit.queue_overflows || 0) +
+    ", starvation resets " + (dit.starvation_resets || 0);
   document.getElementById("airplay-policy").textContent = v2 ?
     "AirPlay blocks radio changes. Enable explicit disconnect above to switch to radio." :
     "While AirPlay is connected, your selection is queued for when you disconnect.";

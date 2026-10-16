@@ -6,7 +6,8 @@ menu "Airplay ESP Configuration"
         help
             Enables UART1 RX4/TX5, UART2 RX7/TX6, and S/PDIF mirror GPIO47.
             Use the radio-s3-v2 environment for optical output GPIO21.
-            Sony and DIT PCM outputs are not enabled by this option.
+            Enables native-rate DIT4096 I2S1 PCM on GPIO39/38/15/16 with
+            reset GPIO17. Sony PCM output remains disabled.
     # Board configuration is now in components/boards/Kconfig.projbuild
     
     menu "LED Configuration"

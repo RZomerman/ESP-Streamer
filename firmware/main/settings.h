@@ -8,7 +8,7 @@
  */
 
 // Default device name (used if none configured)
-#define SETTINGS_DEFAULT_DEVICE_NAME "STR-E200ES"
+#define SETTINGS_DEFAULT_DEVICE_NAME "STR-E300ES"
 
 /**
  * Initialize settings module (call once at startup)

@@ -127,7 +127,11 @@ class HttpTests(unittest.IsolatedAsyncioTestCase):
             protocol_version=2, radio_changes_blocked=True,
             source="AirPlay", radio_playing=False,
             now_playing={"title": "Example track", "codec": "ALAC"},
-            sony_pcm_enabled=False, dit_pcm_enabled=False,
+            sony_pcm_enabled=False, dit_pcm_enabled=True,
+            dit={"running": True, "sample_rate": 44100, "mclk_hz": 11289600,
+                 "bclk_hz": 2822400, "pcm_bits": 16, "container_bits": 24,
+                 "slot_bits": 32, "write_errors": 0, "queue_overflows": 0,
+                 "starvation_resets": 0, "frames_submitted": 44100},
         )
         result = await self.client.status()
         self.assertEqual(result.source, "AirPlay")

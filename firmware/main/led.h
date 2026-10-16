@@ -25,8 +25,8 @@ void led_init(void);
  */
 void led_audio_feed(const int16_t *pcm, size_t stereo_samples);
 
-/** Follow actual output playback: solid green when active, off when idle. */
-void led_set_playing(bool playing);
+/** Call continuously from playback: radio solid green, AirPlay 1s on/1s off. */
+void led_set_playback(bool playing, bool airplay_connected);
 
 /**
  * Set error state (e.g., speaker fault, decode failure).

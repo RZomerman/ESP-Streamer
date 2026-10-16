@@ -4,6 +4,7 @@
 #include "icy_metadata.h"
 #include "radio_command.h"
 #include "rtsp_server.h"
+#include "dit4096.h"
 
 #include "cJSON.h"
 #include "esp_audio_simple_dec.h"
@@ -459,7 +460,25 @@ cJSON *radio_status_json(void) {
   cJSON_AddBoolToObject(root, "radio_changes_blocked", ap);
   cJSON_AddNumberToObject(root, "coax_gpio", 47);
   cJSON_AddBoolToObject(root, "sony_pcm_enabled", false);
-  cJSON_AddBoolToObject(root, "dit_pcm_enabled", false);
+  dit4096_status_t dit;
+  dit4096_get_status(&dit);
+  cJSON_AddBoolToObject(root, "dit_pcm_enabled", dit.enabled);
+  cJSON *dit_status = cJSON_AddObjectToObject(root, "dit");
+  if (!dit_status) {
+    cJSON_Delete(root);
+    return NULL;
+  }
+  cJSON_AddBoolToObject(dit_status, "running", dit.running);
+  cJSON_AddNumberToObject(dit_status, "sample_rate", dit.sample_rate);
+  cJSON_AddNumberToObject(dit_status, "mclk_hz", dit.sample_rate * 256);
+  cJSON_AddNumberToObject(dit_status, "bclk_hz", dit.sample_rate * 64);
+  cJSON_AddNumberToObject(dit_status, "pcm_bits", 16);
+  cJSON_AddNumberToObject(dit_status, "container_bits", 24);
+  cJSON_AddNumberToObject(dit_status, "slot_bits", 32);
+  cJSON_AddNumberToObject(dit_status, "write_errors", dit.write_errors);
+  cJSON_AddNumberToObject(dit_status, "queue_overflows", dit.queue_overflows);
+  cJSON_AddNumberToObject(dit_status, "starvation_resets", dit.starvation_resets);
+  cJSON_AddNumberToObject(dit_status, "frames_submitted", dit.frames_submitted);
 #endif
   cJSON_AddNumberToObject(root, "spdif_errors", audio_output_get_write_errors());
   cJSON_AddNumberToObject(root, "spdif_dma_underruns", audio_output_get_underruns());

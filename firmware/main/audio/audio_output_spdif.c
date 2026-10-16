@@ -2,6 +2,7 @@
 #include "audio_receiver.h"
 #include "audio_resample.h"
 #include "radio.h"
+#include "dit4096.h"
 #include "spdif_encoder.h"
 #include "led.h"
 #include "rtsp_server.h"
@@ -124,10 +125,12 @@ static void playback_task(void *unused) {
     if (ap != previous_airplay || generation != next_generation ||
         atomic_exchange(&flush_requested, false)) {
       ESP_ERROR_CHECK(i2s_channel_disable(tx));
+      dit4096_flush();
       output_cursor_reset();
       memset(&encoder, 0, sizeof(encoder));
       ESP_ERROR_CHECK(i2s_channel_enable(tx));
       audio_resample_reset();
+      last_audio_us = 0;
       rate = 0;
       previous_airplay = ap;
       generation = next_generation;
@@ -137,6 +140,7 @@ static void playback_task(void *unused) {
                         radio_read(pcm, FRAME_SAMPLES, &source_rate);
     int16_t *data = pcm;
     if (frames) {
+      dit4096_submit(pcm, frames, source_rate, ap ? airplay_get_volume_q15() : 32768);
       if (source_rate != rate) {
         if (!audio_resample_init(source_rate, OUTPUT_RATE, 2)) {
           ESP_LOGE(TAG, "Cannot configure %lu Hz resampling", (unsigned long)source_rate);
@@ -159,7 +163,7 @@ static void playback_task(void *unused) {
     }
     int64_t now_us = esp_timer_get_time();
     if (frames && (!ap || audio_receiver_is_playing())) last_audio_us = now_us;
-    led_set_playing(last_audio_us != 0 && now_us - last_audio_us < 250000);
+    led_set_playback(last_audio_us != 0 && now_us - last_audio_us < 250000, ap);
     if (!frames) {
       memset(pcm, 0, FRAME_SAMPLES * 4);
       data = pcm;
@@ -171,7 +175,8 @@ static void playback_task(void *unused) {
   }
   free(pcm);
   free(output);
-  led_set_playing(false);
+  led_set_playback(false, false);
+  dit4096_flush();
   playback_handle = NULL;
   vTaskDelete(NULL);
 }
@@ -192,12 +197,13 @@ esp_err_t audio_output_init(void) {
 #ifdef CONFIG_RADIO_V2
   ESP_RETURN_ON_ERROR(gpio_set_direction(GPIO_NUM_47, GPIO_MODE_OUTPUT), TAG, "Coax GPIO");
   esp_rom_gpio_connect_out_signal(GPIO_NUM_47, I2S0O_SD_OUT_IDX, false, false);
-  ESP_LOGI(TAG, "S/PDIF mirrored to GPIO47; Sony/DIT PCM outputs disabled");
+  ESP_LOGI(TAG, "S/PDIF mirrored to GPIO47; Sony PCM output disabled");
 #endif
   i2s_event_callbacks_t callbacks = {.on_sent = spdif_on_sent};
   ESP_RETURN_ON_ERROR(i2s_channel_register_event_callback(tx, &callbacks, NULL),
                       TAG, "I2S completion callback");
   ESP_RETURN_ON_ERROR(i2s_channel_enable(tx), TAG, "I2S enable");
+  ESP_RETURN_ON_ERROR(dit4096_init(), TAG, "DIT4096 initialization");
   ESP_LOGI(TAG, "48 kHz S/PDIF output on GPIO%d", CONFIG_SPDIF_DO_IO);
   return ESP_OK;
 }
@@ -213,9 +219,13 @@ void audio_output_start(void) {
 void audio_output_stop(void) {
   atomic_store(&stopping, true);
   while (playback_handle) vTaskDelay(pdMS_TO_TICKS(10));
+  dit4096_flush();
 }
 
-void audio_output_flush(void) { atomic_store(&flush_requested, true); }
+void audio_output_flush(void) {
+  dit4096_flush();
+  atomic_store(&flush_requested, true);
+}
 void audio_output_set_source_rate(int rate) {
   if (rate > 0) atomic_store(&requested_rate, rate);
 }
@@ -227,7 +237,17 @@ esp_err_t audio_output_write(const void *data, size_t bytes, TickType_t wait) {
   (void)wait;
   if (playback_handle) return ESP_ERR_INVALID_STATE;
   if (bytes % 4) return ESP_ERR_INVALID_SIZE;
-  return spdif_write(data, bytes / 4);
+  const int16_t *pcm = data;
+  for (size_t offset = 0; offset < bytes / 4;) {
+    size_t count = bytes / 4 - offset;
+    if (count > FRAME_SAMPLES) count = FRAME_SAMPLES;
+    // Direct writes already use the physical 48 kHz S/PDIF format.
+    dit4096_submit(pcm + offset * 2, count, OUTPUT_RATE, 32768);
+    esp_err_t err = spdif_write(pcm + offset * 2, count);
+    if (err != ESP_OK) return err;
+    offset += count;
+  }
+  return ESP_OK;
 }
 uint32_t audio_output_get_hardware_latency_us(void) {
   return DMA_COUNT * (DMA_FRAMES / 2) * 1000000UL / OUTPUT_RATE;

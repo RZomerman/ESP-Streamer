@@ -1,4 +1,5 @@
 #include "led.h"
+#include "led_playback.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -653,9 +654,12 @@ void led_set_error(bool error) {
   }
 }
 
-void led_set_playing(bool playing) {
+void led_set_playback(bool playing, bool airplay_connected) {
+  static led_playback_t playback;
+  bool on = led_playback_update(&playback, playing, airplay_connected,
+                                esp_timer_get_time());
   bool already_owned = atomic_exchange(&s_output_controls_state, true);
-  led_state_t state = playing ? STATE_PLAYING : STATE_STANDBY;
+  led_state_t state = on ? STATE_PLAYING : STATE_STANDBY;
   if (!already_owned || s_current_state != state) apply_state(state);
 }
 

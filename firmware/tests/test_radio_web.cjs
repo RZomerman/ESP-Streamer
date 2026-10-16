@@ -45,6 +45,15 @@ async function main() {
   assert.equal(element("override-option").hidden, true);
   assert(buttons.every(button => !button.disabled));
   assert.match(element("airplay-policy").textContent, /queued/);
+  assert.equal(element("dit-detail").hidden, true);
+  context.render({...radio, protocol_version: 2, dit_pcm_enabled: true,
+    dit: {running: true, sample_rate: 44100, mclk_hz: 11289600, bclk_hz: 2822400,
+      write_errors: 1, queue_overflows: 2, starvation_resets: 3}});
+  assert.equal(element("dit-detail").hidden, false);
+  assert.match(element("dit-detail").textContent, /44.1 kHz native PCM; MCLK 11289600 Hz; BCK 2822400 Hz/);
+  assert.match(element("dit-detail").textContent, /write errors 1, queue overflows 2, starvation resets 3/);
+  context.render({...radio, dit_pcm_enabled: true, dit: {running: false}});
+  assert.match(element("dit-detail").textContent, /Muted \/ buffering/);
 
   context.render(airplay);
   assert.equal(element("override-option").hidden, false);
