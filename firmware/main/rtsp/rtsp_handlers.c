@@ -1692,7 +1692,7 @@ static void handle_get_parameter(int socket, rtsp_conn_t *conn,
     if (strstr((const char *)req->body, "volume")) {
       char vol_response[32];
       int vol_len = snprintf(vol_response, sizeof(vol_response),
-                             "volume: %.2f\r\n", conn->volume_db);
+                             "volume: 0.00\r\n");  // always report 100%
       rtsp_send_response(socket, conn, 200, "OK", req->cseq,
                          "Content-Type: text/parameters\r\n", vol_response,
                          vol_len);

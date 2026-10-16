@@ -4,6 +4,7 @@
 #include "icy_metadata.h"
 #include "radio_command.h"
 #include "rtsp_server.h"
+#include "settings.h"
 #include "dit4096.h"
 
 #include "cJSON.h"
@@ -479,6 +480,10 @@ cJSON *radio_status_json(void) {
   cJSON_AddNumberToObject(dit_status, "queue_overflows", dit.queue_overflows);
   cJSON_AddNumberToObject(dit_status, "starvation_resets", dit.starvation_resets);
   cJSON_AddNumberToObject(dit_status, "frames_submitted", dit.frames_submitted);
+  cJSON_AddNumberToObject(dit_status, "queue_min_free_bytes", dit.queue_min_free_bytes);
+  cJSON_AddNumberToObject(dit_status, "max_write_ms", dit.max_write_ms);
+  cJSON_AddNumberToObject(dit_status, "overflow_stall_ms", dit.overflow_stall_ms);
+  cJSON_AddBoolToObject(dit_status, "overflow_running", dit.overflow_running);
 #endif
   cJSON_AddNumberToObject(root, "spdif_errors", audio_output_get_write_errors());
   cJSON_AddNumberToObject(root, "spdif_dma_underruns", audio_output_get_underruns());
@@ -508,6 +513,11 @@ cJSON *radio_status_json(void) {
   cJSON_AddNumberToObject(airplay_status, "buffer_underflows", diagnostics.stats.buffer_underruns);
   cJSON_AddNumberToObject(airplay_status, "buffer_overflows", diagnostics.stats.buffer_overruns);
   cJSON_AddNumberToObject(airplay_status, "late_frames", diagnostics.stats.late_frames);
+  float volume_db = 0;
+  if (settings_get_volume(&volume_db) == ESP_OK)
+    cJSON_AddNumberToObject(airplay_status, "volume_db", volume_db);
+  cJSON_AddNumberToObject(airplay_status, "volume_q15", airplay_get_volume_q15());
+  cJSON_AddNumberToObject(airplay_status, "volume_updates", rtsp_conn_volume_updates());
   return root;
 }
 

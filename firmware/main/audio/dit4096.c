@@ -2,7 +2,12 @@
 #include "sdkconfig.h"
 #include <string.h>
 
-#ifdef CONFIG_RADIO_V2
+// The DIT4096 output is opt-in: the board is not populated by default.
+#if defined(CONFIG_RADIO_V2) && defined(CONFIG_RADIO_DIT4096_PCM)
+#define DIT4096_ACTIVE 1
+#endif
+
+#ifdef DIT4096_ACTIVE
 #include "dit4096_format.h"
 #include "driver/gpio.h"
 #include "driver/i2s_std.h"
@@ -39,6 +44,11 @@ static atomic_uint write_errors;
 static atomic_uint queue_overflows;
 static atomic_uint starvation_resets;
 static atomic_uint frames_submitted;
+static atomic_uint queue_min_free = UINT32_MAX;
+static atomic_uint max_write_ms;
+static atomic_llong last_consume_us;
+static atomic_uint overflow_stall_ms;
+static atomic_bool overflow_running;
 // Single producer: the shared playback task (or direct writer when stopped).
 static dit_packet_t outgoing;
 static uint32_t words[DIT_FRAMES * 2];
@@ -60,6 +70,7 @@ static void dit_task(void *unused) {
     size_t size;
     dit_packet_t *packet = xRingbufferReceive(queue, &size, pdMS_TO_TICKS(20));
     uint32_t current = atomic_load(&generation);
+    atomic_store(&last_consume_us, esp_timer_get_time());
     if (current != active_generation) {
       disable_output();
       rate = preloaded = 0;
@@ -122,7 +133,10 @@ static void dit_task(void *unused) {
         }
       }
     } else {
+      int64_t started_us = esp_timer_get_time();
       err = i2s_channel_write(tx, words, bytes, &written, 100);
+      uint32_t took_ms = (uint32_t)((esp_timer_get_time() - started_us) / 1000);
+      if (took_ms > atomic_load(&max_write_ms)) atomic_store(&max_write_ms, took_ms);
     }
     if (err != ESP_OK || written != bytes) {
       atomic_fetch_add(&write_errors, 1);
@@ -139,7 +153,7 @@ static void dit_task(void *unused) {
 #endif
 
 esp_err_t dit4096_init(void) {
-#ifdef CONFIG_RADIO_V2
+#ifdef DIT4096_ACTIVE
   ESP_RETURN_ON_ERROR(gpio_set_direction(DIT_RESET_GPIO, GPIO_MODE_OUTPUT), TAG, "Reset GPIO");
   ESP_RETURN_ON_ERROR(gpio_set_level(DIT_RESET_GPIO, 0), TAG, "Hold reset");
   i2s_chan_config_t channel = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_1, I2S_ROLE_MASTER);
@@ -149,7 +163,7 @@ esp_err_t dit4096_init(void) {
   ESP_RETURN_ON_ERROR(i2s_new_channel(&channel, &tx, NULL), TAG, "I2S1 allocation");
   i2s_std_config_t config = {
       .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(48000),
-      .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_24BIT, I2S_SLOT_MODE_STEREO),
+      .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_STEREO),
       .gpio_cfg = {.mclk = GPIO_NUM_39, .bclk = GPIO_NUM_38, .ws = GPIO_NUM_15,
                    .dout = GPIO_NUM_16, .din = I2S_GPIO_UNUSED}};
   config.clk_cfg.mclk_multiple = I2S_MCLK_MULTIPLE_256;
@@ -172,13 +186,13 @@ esp_err_t dit4096_init(void) {
 }
 
 void dit4096_flush(void) {
-#ifdef CONFIG_RADIO_V2
+#ifdef DIT4096_ACTIVE
   atomic_fetch_add(&generation, 1);
 #endif
 }
 
 void dit4096_submit(const int16_t *pcm, size_t frames, uint32_t rate, int32_t gain_q15) {
-#ifdef CONFIG_RADIO_V2
+#ifdef DIT4096_ACTIVE
   if (!atomic_load(&enabled)) return;
   if (!pcm || !frames || frames > DIT_FRAMES || !dit4096_rate_supported(rate) ||
       gain_q15 < 0 || gain_q15 > 32768) {
@@ -199,8 +213,15 @@ void dit4096_submit(const int16_t *pcm, size_t frames, uint32_t rate, int32_t ga
   }
   if (xRingbufferSend(queue, &outgoing, sizeof(outgoing), 0) != pdTRUE) {
     atomic_fetch_add(&queue_overflows, 1);
-    ESP_LOGE(TAG, "Native PCM queue full; resetting DIT stream without blocking S/PDIF");
+    int64_t stalled_ms = (esp_timer_get_time() - atomic_load(&last_consume_us)) / 1000;
+    atomic_store(&overflow_stall_ms, (uint32_t)stalled_ms);
+    atomic_store(&overflow_running, atomic_load(&running));
+    ESP_LOGE(TAG, "Native PCM queue full (consumer idle %lld ms, running %d); resetting DIT stream",
+             (long long)stalled_ms, (int)atomic_load(&running));
     dit4096_flush();
+  } else {
+    uint32_t free_bytes = (uint32_t)xRingbufferGetCurFreeSize(queue);
+    if (free_bytes < atomic_load(&queue_min_free)) atomic_store(&queue_min_free, free_bytes);
   }
 #else
   (void)pcm;
@@ -212,7 +233,7 @@ void dit4096_submit(const int16_t *pcm, size_t frames, uint32_t rate, int32_t ga
 
 void dit4096_get_status(dit4096_status_t *status) {
   memset(status, 0, sizeof(*status));
-#ifdef CONFIG_RADIO_V2
+#ifdef DIT4096_ACTIVE
   status->enabled = atomic_load(&enabled);
   status->running = atomic_load(&running);
   status->sample_rate = atomic_load(&sample_rate);
@@ -220,5 +241,10 @@ void dit4096_get_status(dit4096_status_t *status) {
   status->queue_overflows = atomic_load(&queue_overflows);
   status->starvation_resets = atomic_load(&starvation_resets);
   status->frames_submitted = atomic_load(&frames_submitted);
+  uint32_t min_free = atomic_load(&queue_min_free);
+  status->queue_min_free_bytes = min_free == UINT32_MAX ? 0 : min_free;
+  status->max_write_ms = atomic_load(&max_write_ms);
+  status->overflow_stall_ms = atomic_load(&overflow_stall_ms);
+  status->overflow_running = atomic_load(&overflow_running);
 #endif
 }

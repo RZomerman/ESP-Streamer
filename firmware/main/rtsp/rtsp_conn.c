@@ -112,11 +112,19 @@ void rtsp_conn_cleanup(rtsp_conn_t *conn) {
   conn->encrypted_mode = false;
 }
 
+static volatile uint32_t s_volume_updates;
+uint32_t rtsp_conn_volume_updates(void) { return s_volume_updates; }
+
 void rtsp_conn_set_volume(rtsp_conn_t *conn, float volume_db) {
   if (!conn) {
     return;
   }
 
+  s_volume_updates++;
+  // Sender volume is not applied (loudness is set on the receiver); only mute is honoured.
+  if (volume_db > -30.0f) {
+    volume_db = 0.0f;
+  }
   conn->volume_db = volume_db;
 
   // AirPlay volume: 0 dB = max, -30 dB = mute

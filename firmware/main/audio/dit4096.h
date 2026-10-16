@@ -12,6 +12,10 @@ typedef struct {
   uint32_t queue_overflows;
   uint32_t starvation_resets;
   uint32_t frames_submitted;
+  uint32_t queue_min_free_bytes;
+  uint32_t max_write_ms;
+  uint32_t overflow_stall_ms;
+  bool overflow_running;
 } dit4096_status_t;
 
 esp_err_t dit4096_init(void);

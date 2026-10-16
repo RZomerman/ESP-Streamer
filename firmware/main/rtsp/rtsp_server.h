@@ -23,6 +23,9 @@ void rtsp_server_override_end(void);
  */
 void airplay_set_volume(float volume_db);
 
+/** Number of AirPlay volume commands applied since boot (diagnostics). */
+uint32_t rtsp_conn_volume_updates(void);
+
 /**
  * Get current volume as Q15 scale factor for audio processing
  * @return Q15 fixed-point multiplier (0 = mute, 32768 = unity)
