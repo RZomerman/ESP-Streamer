@@ -40,6 +40,17 @@ static portMUX_TYPE cursor_lock = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t submitted_frames;
 static uint32_t lost_frames;
 static atomic_uint dma_underruns;
+static atomic_uint timing_max_us[4];
+
+static void timing_note(int idx, int64_t start_us) {
+  uint32_t dt = (uint32_t)(esp_timer_get_time() - start_us);
+  if (dt > atomic_load_explicit(&timing_max_us[idx], memory_order_relaxed))
+    atomic_store_explicit(&timing_max_us[idx], dt, memory_order_relaxed);
+}
+
+void audio_output_get_timing_us(uint32_t out[4]) {
+  for (int i = 0; i < 4; ++i) out[i] = atomic_exchange(&timing_max_us[i], 0);
+}
 static spdif_encoder_t encoder;
 
 static bool IRAM_ATTR spdif_on_sent(i2s_chan_handle_t handle,
@@ -136,8 +147,10 @@ static void playback_task(void *unused) {
       generation = next_generation;
     }
     uint32_t source_rate = atomic_load(&requested_rate);
+    int64_t loop_start_us = esp_timer_get_time();
     size_t frames = ap ? audio_receiver_read(pcm, FRAME_SAMPLES + 1) :
                         radio_read(pcm, FRAME_SAMPLES, &source_rate);
+    timing_note(0, loop_start_us);
     int16_t *data = pcm;
     if (frames) {
       dit4096_submit(pcm, frames, source_rate, ap ? airplay_get_volume_q15() : 32768);
@@ -148,7 +161,9 @@ static void playback_task(void *unused) {
         } else rate = source_rate;
       }
       if (frames && audio_resample_is_active()) {
+        int64_t resample_start_us = esp_timer_get_time();
         frames = audio_resample_process(pcm, frames, output, MAX_OUTPUT_FRAMES);
+        timing_note(1, resample_start_us);
         data = output;
       }
       if (ap) {
@@ -170,8 +185,11 @@ static void playback_task(void *unused) {
       frames = FRAME_SAMPLES;
     }
     output_queued_frames();
+    int64_t write_start_us = esp_timer_get_time();
     if (spdif_write(data, frames) != ESP_OK)
       vTaskDelay(pdMS_TO_TICKS(10));
+    timing_note(2, write_start_us);
+    timing_note(3, loop_start_us);
   }
   free(pcm);
   free(output);

@@ -30,6 +30,10 @@ __attribute__((weak)) uint32_t audio_output_get_underruns(void) {
   return 0;
 }
 
+__attribute__((weak)) void audio_output_get_timing_us(uint32_t out[4]) {
+  out[0] = out[1] = out[2] = out[3] = 0;
+}
+
 __attribute__((weak)) uint32_t audio_output_get_write_errors(void) {
   return 0;
 }

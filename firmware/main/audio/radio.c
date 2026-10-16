@@ -487,6 +487,12 @@ cJSON *radio_status_json(void) {
 #endif
   cJSON_AddNumberToObject(root, "spdif_errors", audio_output_get_write_errors());
   cJSON_AddNumberToObject(root, "spdif_dma_underruns", audio_output_get_underruns());
+  uint32_t timing_us[4];
+  audio_output_get_timing_us(timing_us);
+  cJSON_AddNumberToObject(root, "loop_max_read_us", timing_us[0]);
+  cJSON_AddNumberToObject(root, "loop_max_resample_us", timing_us[1]);
+  cJSON_AddNumberToObject(root, "loop_max_write_us", timing_us[2]);
+  cJSON_AddNumberToObject(root, "loop_max_total_us", timing_us[3]);
   cJSON_AddNumberToObject(root, "internal_heap", heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
   cJSON_AddStringToObject(now_playing, "codec", ap ? diagnostics.format.codec :
       (atomic_load(&codec) == ESP_AUDIO_SIMPLE_DEC_TYPE_MP3 ? "MP3" :

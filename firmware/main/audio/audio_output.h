@@ -126,6 +126,9 @@ uint32_t audio_output_get_underruns(void);
 
 uint32_t audio_output_get_write_errors(void);
 
+/** Max playback-loop stage times (read, resample, write, whole loop) in us. */
+void audio_output_get_timing_us(uint32_t out[4]);
+
 /**
  * Cycle the output channel mode: STEREO -> LEFT -> RIGHT -> MONO -> STEREO.
  * The new mode is persisted to NVS.
